@@ -344,12 +344,19 @@ var pkgsFilter = func(pkgs []*load.Package) []*load.Package { return pkgs }
 var runtimeVersion = runtime.Version()
 
 func runBuild(cmd *base.Command, args []string) {
+	fmt.Printf("start -- runBuild\n")
 	BuildInit()
 	var b Builder
 	b.Init()
-
+	
+	fmt.Printf("      -- runBuild -- args: %+v\n", args)
 	pkgs := load.PackagesForBuild(args)
-
+	
+	fmt.Printf("      -- len(pkgs): %d\n", len(pkgs))
+	for _, p := range pkgs {
+		fmt.Printf("      -- pkg: %+v\n", p)
+	}
+	
 	explicitO := len(cfg.BuildO) > 0
 
 	if len(pkgs) == 1 && pkgs[0].Name == "main" && cfg.BuildO == "" {
@@ -377,7 +384,19 @@ func runBuild(cmd *base.Command, args []string) {
 		depMode = ModeInstall
 	}
 
-	pkgs = omitTestOnly(pkgsFilter(load.Packages(args)))
+	pkgs = pkgsFilter(load.Packages(args))
+	
+	fmt.Printf("      -- pkgsFilter len(pkgs): %d\n", len(pkgs))
+	for _, p := range pkgs {
+		fmt.Printf("      -- pkg: %+v\n", p)
+	}
+
+	pkgs = omitTestOnly(pkgs)
+	
+	fmt.Printf("      -- omitTestOnly len(pkgs): %d\n", len(pkgs))
+	for _, p := range pkgs {
+		fmt.Printf("      -- pkg: %+v\n", p)
+	}
 
 	// Special case -o /dev/null by not writing at all.
 	if cfg.BuildO == os.DevNull {
@@ -432,6 +451,7 @@ func runBuild(cmd *base.Command, args []string) {
 		a = b.buildmodeShared(ModeBuild, depMode, args, pkgs, a)
 	}
 	b.Do(a)
+	fmt.Printf("end -- runBuild\n")
 }
 
 var CmdInstall = &base.Command{
@@ -523,7 +543,7 @@ func runInstall(cmd *base.Command, args []string) {
 func omitTestOnly(pkgs []*load.Package) []*load.Package {
 	var list []*load.Package
 	for _, p := range pkgs {
-		if len(p.GoFiles)+len(p.CgoFiles) == 0 && !p.Internal.CmdlinePkgLiteral {
+		if len(p.GoFiles)+len(p.CgoFiles)+len(p.CFiles) == 0 && !p.Internal.CmdlinePkgLiteral {
 			// Package has no source files,
 			// perhaps due to build tags or perhaps due to only having *_test.go files.
 			// Also, it is only being processed as the result of a wildcard match

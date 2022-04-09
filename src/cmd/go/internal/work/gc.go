@@ -350,8 +350,9 @@ func toolVerify(a *Action, b *Builder, p *load.Package, newTool string, ofile st
 
 func (gcToolchain) pack(b *Builder, a *Action, afile string, ofiles []string) error {
 	var absOfiles []string
-	for _, f := range ofiles {
+	for i, f := range ofiles {
 		absOfiles = append(absOfiles, mkAbs(a.Objdir, f))
+		fmt.Printf("%d: %s\n", i, f)
 	}
 	absAfile := mkAbs(a.Objdir, afile)
 
@@ -359,7 +360,12 @@ func (gcToolchain) pack(b *Builder, a *Action, afile string, ofiles []string) er
 	// Since it used to not work that way, verify.
 	if !cfg.BuildN {
 		if _, err := os.Stat(absAfile); err != nil {
-			base.Fatalf("os.Stat of archive file failed: %v", err)
+			_, err := os.Create(absAfile)
+			if err == nil {
+				fmt.Println("hell yeah empty _pkg_.a")
+			}
+			//~ base.Fatalf("os.Stat of archive file failed: %v", err)
+			
 		}
 	}
 
@@ -565,6 +571,85 @@ func (gcToolchain) ld(b *Builder, root *Action, out, importcfg, mainpkg string) 
 	return b.run(root, dir, root.Package.ImportPath, env, cfg.BuildToolexec, base.Tool("link"), "-o", out, "-importcfg", importcfg, ldflags, mainpkg)
 }
 
+func (gcToolchain) ldc(b *Builder, root *Action, out, importcfg, mainpkg string) error {
+	cxx := len(root.Package.CXXFiles) > 0 || len(root.Package.SwigCXXFiles) > 0
+	for _, a := range root.Deps {
+		if a.Package != nil && (len(a.Package.CXXFiles) > 0 || len(a.Package.SwigCXXFiles) > 0) {
+			cxx = true
+		}
+	}
+	var ldflags []string
+	if cfg.BuildContext.InstallSuffix != "" {
+		ldflags = append(ldflags, "-installsuffix", cfg.BuildContext.InstallSuffix)
+	}
+	if root.Package.Internal.OmitDebug {
+		ldflags = append(ldflags, "-s", "-w")
+	}
+	if cfg.BuildBuildmode == "plugin" {
+		ldflags = append(ldflags, "-pluginpath", pluginPath(root))
+	}
+
+	// Store BuildID inside toolchain binaries as a unique identifier of the
+	// tool being run, for use by content-based staleness determination.
+	if root.Package.Goroot && strings.HasPrefix(root.Package.ImportPath, "cmd/") {
+		// External linking will include our build id in the external
+		// linker's build id, which will cause our build id to not
+		// match the next time the tool is built.
+		// Rely on the external build id instead.
+		if !sys.MustLinkExternal(cfg.Goos, cfg.Goarch) {
+			ldflags = append(ldflags, "-X=cmd/internal/objabi.buildID="+root.buildID)
+		}
+	}
+
+	// If the user has not specified the -extld option, then specify the
+	// appropriate linker. In case of C++ code, use the compiler named
+	// by the CXX environment variable or defaultCXX if CXX is not set.
+	// Else, use the CC environment variable and defaultCC as fallback.
+	var compiler []string
+	if cxx {
+		compiler = envList("CXX", cfg.DefaultCXX(cfg.Goos, cfg.Goarch))
+	} else {
+		compiler = envList("CC", cfg.DefaultCC(cfg.Goos, cfg.Goarch))
+	}
+	ldflags = append(ldflags, "-buildmode="+ldBuildmode)
+	if root.buildID != "" {
+		ldflags = append(ldflags, "-buildid="+root.buildID)
+	}
+	ldflags = append(ldflags, forcedLdflags...)
+	ldflags = append(ldflags, root.Package.Internal.Ldflags...)
+	ldflags = setextld(ldflags, compiler)
+
+	// On OS X when using external linking to build a shared library,
+	// the argument passed here to -o ends up recorded in the final
+	// shared library in the LC_ID_DYLIB load command.
+	// To avoid putting the temporary output directory name there
+	// (and making the resulting shared library useless),
+	// run the link in the output directory so that -o can name
+	// just the final path element.
+	// On Windows, DLL file name is recorded in PE file
+	// export section, so do like on OS X.
+	dir := "."
+	if (cfg.Goos == "darwin" || cfg.Goos == "windows") && cfg.BuildBuildmode == "c-shared" {
+		dir, out = filepath.Split(out)
+	}
+
+	env := []string{}
+	if cfg.BuildTrimpath {
+		env = append(env, "GOROOT_FINAL=go")
+	}
+	
+	builddir := mainpkg[:len(mainpkg)-len("_pkg_.a")]
+	
+	cfiles := str.StringList(root.Package.CFiles)
+	objects := []string{}
+	for _, file := range cfiles {
+		outfile := mkAbs(builddir, file[:len(file)-len(".c")] + ".o")
+		objects = append(objects, outfile)
+	}
+	
+	return b.run(root, dir, root.Package.ImportPath, env, cfg.BuildToolexec, compiler, "-o", out, objects)
+}
+
 func (gcToolchain) ldShared(b *Builder, root *Action, toplevelactions []*Action, out, importcfg string, allactions []*Action) error {
 	ldflags := []string{"-installsuffix", cfg.BuildContext.InstallSuffix}
 	ldflags = append(ldflags, "-buildmode=shared")
@@ -597,5 +682,32 @@ func (gcToolchain) ldShared(b *Builder, root *Action, toplevelactions []*Action,
 }
 
 func (gcToolchain) cc(b *Builder, a *Action, ofile, cfile string) error {
-	return fmt.Errorf("%s: C source files not supported without cgo", mkAbs(a.Package.Dir, cfile))
+	p := a.Package
+	inc := filepath.Join(cfg.GOROOT, "pkg", "include")
+	cfile = mkAbs(p.Dir, cfile)
+	defs := []string{"-D", "GOOS_" + cfg.Goos, "-D", "GOARCH_" + cfg.Goarch}
+	defs = append(defs, b.gccArchArgs()...)
+	if pkgpath := gccgoCleanPkgpath(p); pkgpath != "" {
+		defs = append(defs, `-D`, `GOPKGPATH="`+pkgpath+`"`)
+	}
+	compiler := envList("CC", cfg.DefaultCC(cfg.Goos, cfg.Goarch))
+	if b.gccSupportsFlag(compiler, "-fsplit-stack") {
+		defs = append(defs, "-fsplit-stack")
+	}
+	//~ defs = tools.maybePIC(defs)
+	//~ if b.gccSupportsFlag(compiler, "-ffile-prefix-map=a=b") {
+		//~ defs = append(defs, "-ffile-prefix-map="+base.Cwd+"=.")
+		//~ defs = append(defs, "-ffile-prefix-map="+b.WorkDir+"=/tmp/go-build")
+	//~ } else if b.gccSupportsFlag(compiler, "-fdebug-prefix-map=a=b") {
+		//~ defs = append(defs, "-fdebug-prefix-map="+b.WorkDir+"=/tmp/go-build")
+	//~ }
+	//~ if b.gccSupportsFlag(compiler, "-gno-record-gcc-switches") {
+		//~ defs = append(defs, "-gno-record-gcc-switches")
+	//~ }
+	fmt.Printf("%s  %s %s '-Wall' '-g' '-I' %s '-I'   %s, '-o' %s '' '-c' %s\n",
+	         p.Dir, p.ImportPath, compiler, a.Objdir, inc, ofile, cfile)
+	
+	return b.run(a, p.Dir, p.ImportPath, nil, compiler, "-Wall", "-g",
+		"-I", a.Objdir, "-I", inc, "-o", ofile, "-c", cfile)
+	//~ return fmt.Errorf("%s: C source files not supported without cgo", mkAbs(a.Package.Dir, cfile))
 }

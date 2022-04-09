@@ -521,6 +521,10 @@ func (tools gccgoToolchain) ld(b *Builder, root *Action, out, importcfg, mainpkg
 	return tools.link(b, root, out, importcfg, root.Deps, ldBuildmode, root.Package.ImportPath)
 }
 
+func (tools gccgoToolchain) ldc(b *Builder, root *Action, out, importcfg, mainpkg string) error {
+	return tools.link(b, root, out, importcfg, root.Deps, ldBuildmode, root.Package.ImportPath)
+}
+
 func (tools gccgoToolchain) ldShared(b *Builder, root *Action, toplevelactions []*Action, out, importcfg string, allactions []*Action) error {
 	return tools.link(b, root, out, importcfg, allactions, "shared", out)
 }

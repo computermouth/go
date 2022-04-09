@@ -18,6 +18,7 @@ import (
 	pathpkg "path"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -207,6 +208,7 @@ func (e *NoGoError) Error() string {
 		// to appear at the end of error message.
 		return "no non-test Go files in " + e.Package.Dir
 	}
+	debug.PrintStack()
 	return "no Go files in " + e.Package.Dir
 }
 
@@ -218,6 +220,8 @@ func (e *NoGoError) Error() string {
 // imported packages, for example, if there was a parse error loading imports
 // in one file, but other files are okay.
 func (p *Package) setLoadPackageDataError(err error, path string, stk *ImportStack, importPos []token.Position) {
+	fmt.Println("start -- setLoadPackageDataError")
+	fmt.Println(err)
 	matchErr, isMatchErr := err.(*search.MatchError)
 	if isMatchErr && matchErr.Match.Pattern() == path {
 		if matchErr.Match.IsLiteral() {
@@ -238,6 +242,8 @@ func (p *Package) setLoadPackageDataError(err error, path string, stk *ImportSta
 		}
 		err = &NoGoError{Package: p}
 	}
+	
+	fmt.Printf("      -- setLoadPackageDataError -- err %+v\n", err)
 
 	// Take only the first error from a scanner.ErrorList. PackageError only
 	// has room for one position, so we report the first error with a position
@@ -282,6 +288,8 @@ func (p *Package) setLoadPackageDataError(err error, path string, stk *ImportSta
 	if path != stk.Top() {
 		p = setErrorPos(p, importPos)
 	}
+	fmt.Println("end -- setLoadPackageDataError")
+	fmt.Println(err)
 }
 
 // Resolve returns the resolved version of imports,
@@ -387,6 +395,7 @@ func (p *PackageError) Error() string {
 	if p.Pos != "" && (len(p.ImportStack) == 0 || !p.alwaysPrintStack) {
 		// Omit import stack. The full path to the file where the error
 		// is the most important thing.
+		fmt.Printf("      -- load.PackageError.Error()")
 		return p.Pos + ": " + p.Err.Error()
 	}
 
@@ -397,6 +406,7 @@ func (p *PackageError) Error() string {
 	// "package A imports B: error loading C caused by B" would not be clearer
 	// if "imports B" were omitted.
 	if len(p.ImportStack) == 0 {
+		fmt.Printf("      -- load.PackageError.Error2()")
 		return p.Err.Error()
 	}
 	var optpos string
@@ -406,11 +416,15 @@ func (p *PackageError) Error() string {
 	return "package " + strings.Join(p.ImportStack, "\n\timports ") + optpos + ": " + p.Err.Error()
 }
 
-func (p *PackageError) Unwrap() error { return p.Err }
+func (p *PackageError) Unwrap() error { 
+		fmt.Printf("      -- load.PackageError.Unwrap()")
+		return p.Err }
 
 // PackageError implements MarshalJSON so that Err is marshaled as a string
 // and non-essential fields are omitted.
 func (p *PackageError) MarshalJSON() ([]byte, error) {
+	
+		fmt.Printf("      -- load.MarshalJSON.Error()")
 	perr := struct {
 		ImportStack []string
 		Pos         string
@@ -441,6 +455,8 @@ var _ ImportPathError = (*importError)(nil)
 
 func ImportErrorf(path, format string, args ...interface{}) ImportPathError {
 	err := &importError{importPath: path, err: fmt.Errorf(format, args...)}
+	
+		fmt.Printf("      -- load.ImportErrorf.Error()")
 	if errStr := err.Error(); !strings.Contains(errStr, path) {
 		panic(fmt.Sprintf("path %q not in error %q", path, errStr))
 	}
@@ -448,12 +464,14 @@ func ImportErrorf(path, format string, args ...interface{}) ImportPathError {
 }
 
 func (e *importError) Error() string {
+		fmt.Printf("      -- load.importError.Error()")
 	return e.err.Error()
 }
 
 func (e *importError) Unwrap() error {
 	// Don't return e.err directly, since we're only wrapping an error if %w
 	// was passed to ImportErrorf.
+		fmt.Printf("      -- load.Unwrap.Error()")
 	return errors.Unwrap(e.err)
 }
 
@@ -1576,6 +1594,11 @@ func (p *Package) exeFromFiles() string {
 		src = p.GoFiles[0]
 	} else if len(p.CgoFiles) > 0 {
 		src = p.CgoFiles[0]
+	} else if len(p.CFiles) > 0 {
+		src = p.CFiles[0]
+		fmt.Printf("src: %s\n", src)
+		_, elem := filepath.Split(src)
+		return elem[:len(elem)-len(".c")]
 	} else {
 		return ""
 	}
@@ -1595,6 +1618,8 @@ func (p *Package) DefaultExecName() string {
 // be the result of calling build.Context.Import.
 // stk contains the import stack, not including path itself.
 func (p *Package) load(path string, stk *ImportStack, importPos []token.Position, bp *build.Package, err error) {
+	fmt.Println("start -- load")
+	fmt.Println(err)
 	p.copyBuild(bp)
 
 	// The localPrefix is the path we interpret ./ imports relative to.
@@ -1624,9 +1649,11 @@ func (p *Package) load(path string, stk *ImportStack, importPos []token.Position
 			}
 		}
 	}
-
+	fmt.Printf("      -- err: %+v\n", err)
 	if err != nil {
 		p.Incomplete = true
+		
+		fmt.Printf("      -- load.Package.Error()")
 		p.setLoadPackageDataError(err, path, stk, importPos)
 	}
 
@@ -1645,6 +1672,8 @@ func (p *Package) load(path string, stk *ImportStack, importPos []token.Position
 			// old, even this code checking for it is stale now!
 			newPath := strings.Replace(p.ImportPath, "code.google.com/p/go.", "golang.org/x/", 1)
 			e := ImportErrorf(p.ImportPath, "the %v command has moved; use %v instead.", p.ImportPath, newPath)
+			
+			fmt.Printf("      -- load setError(e)")
 			setError(e)
 			return
 		}
@@ -1756,11 +1785,14 @@ func (p *Package) load(path string, stk *ImportStack, importPos []token.Position
 	if other := foldPath[fold]; other == "" {
 		foldPath[fold] = p.ImportPath
 	} else if other != p.ImportPath {
+		
+		fmt.Printf("      -- 1788")
 		setError(ImportErrorf(p.ImportPath, "case-insensitive import collision: %q and %q", p.ImportPath, other))
 		return
 	}
 
 	if !SafeArg(p.ImportPath) {
+		fmt.Printf("      -- 1794")
 		setError(ImportErrorf(p.ImportPath, "invalid import path %q", p.ImportPath))
 		return
 	}
@@ -1775,6 +1807,7 @@ func (p *Package) load(path string, stk *ImportStack, importPos []token.Position
 	inputs := p.AllFiles()
 	f1, f2 := str.FoldDup(inputs)
 	if f1 != "" {
+		fmt.Printf("      -- 1809")
 		setError(fmt.Errorf("case-insensitive file name collision: %q and %q", f1, f2))
 		return
 	}
@@ -1788,11 +1821,13 @@ func (p *Package) load(path string, stk *ImportStack, importPos []token.Position
 	// so we shouldn't see any _cgo_ files anyway, but just be safe.
 	for _, file := range inputs {
 		if !SafeArg(file) || strings.HasPrefix(file, "_cgo_") {
+		fmt.Printf("      -- 1823")
 			setError(fmt.Errorf("invalid input file name %q", file))
 			return
 		}
 	}
 	if name := pathpkg.Base(p.ImportPath); !SafeArg(name) {
+		fmt.Printf("      -- 1829")
 		setError(fmt.Errorf("invalid input directory name %q", name))
 		return
 	}
@@ -1839,22 +1874,28 @@ func (p *Package) load(path string, stk *ImportStack, importPos []token.Position
 	}
 
 	// The gc toolchain only permits C source files with cgo or SWIG.
-	if len(p.CFiles) > 0 && !p.UsesCgo() && !p.UsesSwig() && cfg.BuildContext.Compiler == "gc" {
-		setError(fmt.Errorf("C source files not allowed when not using cgo or SWIG: %s", strings.Join(p.CFiles, " ")))
-		return
-	}
+	//~ if len(p.CFiles) > 0 && !p.UsesCgo() && !p.UsesSwig() && cfg.BuildContext.Compiler == "gc" {
+		//~ setError(fmt.Errorf("C source files not allowed when not using cgo or SWIG: %s", strings.Join(p.CFiles, " ")))
+		//~ return
+	//~ }
 
 	// C++, Objective-C, and Fortran source files are permitted only with cgo or SWIG,
 	// regardless of toolchain.
 	if len(p.CXXFiles) > 0 && !p.UsesCgo() && !p.UsesSwig() {
+		pc, filename, line, _ := runtime.Caller(1)
+		fmt.Printf("      -- %+v %+v %+v\n", pc, filename, line)
 		setError(fmt.Errorf("C++ source files not allowed when not using cgo or SWIG: %s", strings.Join(p.CXXFiles, " ")))
 		return
 	}
 	if len(p.MFiles) > 0 && !p.UsesCgo() && !p.UsesSwig() {
+		pc, filename, line, _ := runtime.Caller(1)
+		fmt.Printf("      -- %+v %+v %+v\n", pc, filename, line)
 		setError(fmt.Errorf("Objective-C source files not allowed when not using cgo or SWIG: %s", strings.Join(p.MFiles, " ")))
 		return
 	}
 	if len(p.FFiles) > 0 && !p.UsesCgo() && !p.UsesSwig() {
+		pc, filename, line, _ := runtime.Caller(1)
+		fmt.Printf("      -- %+v %+v %+v\n", pc, filename, line)
 		setError(fmt.Errorf("Fortran source files not allowed when not using cgo or SWIG: %s", strings.Join(p.FFiles, " ")))
 		return
 	}
@@ -1869,6 +1910,8 @@ func (p *Package) load(path string, stk *ImportStack, importPos []token.Position
 			p.Internal.BuildInfo = ModPackageBuildInfo(mainPath, p.Deps)
 		}
 	}
+	fmt.Println("end -- load")
+	fmt.Println(err)
 }
 
 // collectDeps populates p.Deps and p.DepsErrors by iterating over
@@ -2145,14 +2188,17 @@ func Packages(args []string) []*Package {
 // cannot be loaded at all.
 // The packages that fail to load will have p.Error != nil.
 func PackagesAndErrors(patterns []string) []*Package {
+	fmt.Printf("start -- PackagesAndErrors\n")
 	for _, p := range patterns {
+		fmt.Printf("      -- patterns[i]: %s\n", p)
 		// Listing is only supported with all patterns referring to either:
 		// - Files that are part of the same directory.
 		// - Explicit package paths or patterns.
-		if strings.HasSuffix(p, ".go") {
+		if strings.HasSuffix(p, ".go") || strings.HasSuffix(p, ".c") {
 			// We need to test whether the path is an actual Go file and not a
 			// package path or pattern ending in '.go' (see golang.org/issue/34653).
 			if fi, err := os.Stat(p); err == nil && !fi.IsDir() {
+				fmt.Printf("      -- PackagesAndErrors -- returning GoFilesPackage\n")
 				return []*Package{GoFilesPackage(patterns)}
 			}
 		}
@@ -2199,6 +2245,8 @@ func PackagesAndErrors(patterns []string) []*Package {
 			// Pass an empty ImportStack and nil importPos: the error arose from a pattern, not an import.
 			var stk ImportStack
 			var importPos []token.Position
+		pc, filename, line, _ := runtime.Caller(1)
+		fmt.Printf("      -- %+v %+v %+v\n", pc, filename, line)
 			p.setLoadPackageDataError(m.Errs[0], m.Pattern(), &stk, importPos)
 			p.Incomplete = true
 			p.Match = append(p.Match, m.Pattern())
@@ -2216,6 +2264,7 @@ func PackagesAndErrors(patterns []string) []*Package {
 	// their dependencies).
 	setToolFlags(pkgs...)
 
+	fmt.Printf("end -- PackagesAndErrors\n")
 	return pkgs
 }
 
@@ -2239,12 +2288,14 @@ func ImportPaths(args []string) []*search.Match {
 // if any of the packages or their dependencies have errors
 // (cannot be built).
 func PackagesForBuild(args []string) []*Package {
+	fmt.Printf("start -- PackagesForBuild\n")
 	pkgs := PackagesAndErrors(args)
 	printed := map[*PackageError]bool{}
 	for _, pkg := range pkgs {
 		if pkg.Error != nil {
 			base.Errorf("%v", pkg.Error)
 			printed[pkg.Error] = true
+			fmt.Printf("pkg.Error: +%v\n", pkg.Error)
 		}
 		for _, err := range pkg.DepsErrors {
 			// Since these are errors in dependencies,
@@ -2253,10 +2304,12 @@ func PackagesForBuild(args []string) []*Package {
 			// Only print each once.
 			if !printed[err] {
 				printed[err] = true
-				base.Errorf("%v", err)
+				base.Errorf("pkg.DepsError: %v", err)
 			}
 		}
+		fmt.Printf("pkg: %+v\n", pkg)
 	}
+	fmt.Printf("      -- PackagesForBuild -- ExitIfErrors[1]\n")
 	base.ExitIfErrors()
 
 	// Check for duplicate loads of the same package.
@@ -2272,8 +2325,12 @@ func PackagesForBuild(args []string) []*Package {
 			base.Errorf("internal error: duplicate loads of %s", pkg.ImportPath)
 		}
 		seen[pkg.ImportPath] = true
+		
+		fmt.Printf("pkg: %+v\n", pkg)
 	}
+	fmt.Printf("      -- PackagesForBuild -- ExitIfErrors[2]\n")
 	base.ExitIfErrors()
+	fmt.Printf("end -- PackagesForBuild\n")
 
 	return pkgs
 }
@@ -2284,12 +2341,14 @@ func PackagesForBuild(args []string) []*Package {
 func GoFilesPackage(gofiles []string) *Package {
 	ModInit()
 
-	for _, f := range gofiles {
-		if !strings.HasSuffix(f, ".go") {
+	for i, f := range gofiles {
+		fmt.Printf("file[%d]: %s\n", i, f)
+		if !strings.HasSuffix(f, ".go") && !strings.HasSuffix(f, ".c") {
 			pkg := new(Package)
 			pkg.Internal.Local = true
 			pkg.Internal.CmdlineFiles = true
 			pkg.Name = f
+			fmt.Printf("pkg.Name: %s\n", pkg.Name)
 			pkg.Error = &PackageError{
 				Err: fmt.Errorf("named files must be .go files: %s", pkg.Name),
 			}
@@ -2350,6 +2409,19 @@ func GoFilesPackage(gofiles []string) *Package {
 	pkg.ImportPath = "command-line-arguments"
 	pkg.Target = ""
 	pkg.Match = gofiles
+	
+	fmt.Printf("GFP -- pkg: %+v\n", pkg)
+	
+	for i, f := range gofiles {
+		fmt.Printf("file[%d]: %s\n", i, f)
+		if strings.HasSuffix(f, ".go") {
+			break
+		}
+		
+		if (i == len(gofiles) - 1) && (pkg.Name == ""){
+			pkg.Name = "main"
+		}
+	}
 
 	if pkg.Name == "main" {
 		exe := pkg.DefaultExecName() + cfg.ExeSuffix

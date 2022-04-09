@@ -944,7 +944,10 @@ Found:
 				}
 			}
 		}
-
+		
+		isC := (!isCgo && !isXTest && !isTest) && (len(p.GoFiles) == 0) && (len(p.CFiles) > 0)
+		fmt.Printf("isC: %b", isC)
+		
 		var fileList *[]string
 		var importMap map[string][]token.Position
 		switch {
@@ -963,6 +966,18 @@ Found:
 		case isTest:
 			fileList = &p.TestGoFiles
 			importMap = testImported
+		case isC:
+			//~ fileList = &p.CFiles
+			//~ importMap = imported
+			//~ allTags["cgo"] = true
+			//~ if ctxt.CgoEnabled {
+				fileList = &p.CFiles
+				importMap = imported
+			//~ } else {
+				// Ignore imports from cgo files if cgo is disabled.
+				//~ fileList = &p.IgnoredGoFiles
+			//~ }
+			isCgo = true
 		default:
 			fileList = &p.GoFiles
 			importMap = imported
@@ -995,7 +1010,7 @@ Found:
 	if badGoError != nil {
 		return p, badGoError
 	}
-	if len(p.GoFiles)+len(p.CgoFiles)+len(p.TestGoFiles)+len(p.XTestGoFiles) == 0 {
+	if len(p.GoFiles)+len(p.CgoFiles)+len(p.CFiles)+len(p.TestGoFiles)+len(p.XTestGoFiles) == 0 {
 		return p, &NoGoError{p.Dir}
 	}
 	return p, pkgerr

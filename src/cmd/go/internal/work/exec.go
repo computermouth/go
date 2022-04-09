@@ -45,6 +45,8 @@ func actionList(root *Action) []*Action {
 		}
 		seen[a] = true
 		for _, a1 := range a.Deps {
+			fmt.Printf("      -- actionList.walk a1: %+v\n", a1)
+			fmt.Printf("      -- actionList.walk a1.Package: %+v\n", a1.Package)
 			walk(a1)
 		}
 		all = append(all, a)
@@ -55,6 +57,7 @@ func actionList(root *Action) []*Action {
 
 // do runs the action graph rooted at root.
 func (b *Builder) Do(root *Action) {
+	fmt.Printf("start -- Builder.Do\n")
 	if !b.IsCmdList {
 		// If we're doing real work, take time at the end to trim the cache.
 		c := cache.Default()
@@ -73,10 +76,13 @@ func (b *Builder) Do(root *Action) {
 	// to do what it would have done first in a simple depth-first
 	// dependency order traversal.
 	all := actionList(root)
+	fmt.Printf("      -- Build.Do -- actionList\n")
 	for i, a := range all {
 		a.priority = i
+		fmt.Printf("action: %+v\n", a)
+		fmt.Printf("action.Package: %+v\n", a.Package)
 	}
-
+	
 	// Write action graph, without timing information, in case we fail and exit early.
 	writeActionGraph := func() {
 		if file := cfg.DebugActiongraph; file != "" {
@@ -86,6 +92,8 @@ func (b *Builder) Do(root *Action) {
 				base.Fatalf("go: refusing to write action graph to %v\n", file)
 			}
 			js := actionGraphJSON(root)
+			fmt.Printf("      -- Build.Do -- actionGraphJSON\n")
+			fmt.Println(js)
 			if err := ioutil.WriteFile(file, []byte(js), 0666); err != nil {
 				fmt.Fprintf(os.Stderr, "go: writing action graph: %v\n", err)
 				base.SetExitStatus(1)
@@ -93,6 +101,7 @@ func (b *Builder) Do(root *Action) {
 		}
 	}
 	writeActionGraph()
+	fmt.Printf("      -- Build.Do -- post-writeActionGraph -- exit: %d\n", base.GetExitStatus())
 
 	b.readySema = make(chan bool, len(all))
 
@@ -114,13 +123,18 @@ func (b *Builder) Do(root *Action) {
 		if a.json != nil {
 			a.json.TimeStart = time.Now()
 		}
+		fmt.Printf("      -- Build.Do -- a: %+v\n", a)
+		fmt.Printf("      -- Build.Do -- a.json: %+v\n", a.json)
 		var err error
 		if a.Func != nil && (!a.Failed || a.IgnoreFail) {
 			err = a.Func(b, a)
+			fmt.Printf("      -- Build.Do -- handle.err: %+v\n", err)
 		}
 		if a.json != nil {
 			a.json.TimeDone = time.Now()
 		}
+		
+		fmt.Printf("      -- Build.Do -- handle.err: %+v\n", err)
 
 		// The actions run in parallel but all the updates to the
 		// shared work state are serialized through b.exec.
@@ -173,22 +187,33 @@ func (b *Builder) Do(root *Action) {
 					}
 					// Receiving a value from b.readySema entitles
 					// us to take from the ready queue.
+					
+					fmt.Printf("      -- Build.Do -- wg[%d] exit: %d\n", i, base.GetExitStatus())
 					b.exec.Lock()
+					fmt.Printf("      -- Build.Do -- wg[%d] lock: %d\n", i, base.GetExitStatus())
 					a := b.ready.pop()
+					fmt.Printf("      -- Build.Do -- wg[%d] pop: %d\n", i, base.GetExitStatus())
 					b.exec.Unlock()
+					fmt.Printf("      -- Build.Do -- wg[%d] unlock: %d\n", i, base.GetExitStatus())
 					handle(a)
+					fmt.Printf("      -- Build.Do -- wg[%d] handle: %d\n", i, base.GetExitStatus())
 				case <-base.Interrupted:
 					base.SetExitStatus(1)
+					fmt.Printf("      -- Build.Do -- base.Interrupted: %d\n", base.GetExitStatus())
 					return
 				}
 			}
 		}()
 	}
+	fmt.Printf("      -- Build.Do -- post-BuildUp -- exit: %d\n", base.GetExitStatus())
 
 	wg.Wait()
+	fmt.Printf("      -- Build.Do -- post-wg.Wait -- exit: %d\n", base.GetExitStatus())
 
 	// Write action graph again, this time with timing information.
 	writeActionGraph()
+	fmt.Printf("      -- Build.Do -- post-writeActionGraph -- exit: %d\n", base.GetExitStatus())
+	fmt.Printf("end -- Builder.Do\n")
 }
 
 // buildActionID computes the action ID for a build action.
@@ -387,6 +412,9 @@ const (
 // build is the action for building a single package.
 // Note that any new influence on this logic must be reported in b.buildActionID above as well.
 func (b *Builder) build(a *Action) (err error) {
+
+		pc, filename, line, _ := runtime.Caller(1)
+		fmt.Printf("start -- build1 -- %+v %+v %+v\n", pc, filename, line)
 	p := a.Package
 
 	bit := func(x uint32, b bool) uint32 {
@@ -626,9 +654,11 @@ func (b *Builder) build(a *Action) (err error) {
 	need &^= needCgoHdr
 
 	// Sanity check only, since Package.load already checked as well.
-	if len(gofiles) == 0 {
+	if len(gofiles) == 0 && len(cfiles) == 0 {
 		return &load.NoGoError{Package: a.Package}
 	}
+		pc, filename, line, _ = runtime.Caller(1)
+		fmt.Printf("      -- build2 -- %+v %+v %+v\n", pc, filename, line)
 
 	// Prepare Go vet config if needed.
 	if need&needVet != 0 {
@@ -651,6 +681,8 @@ func (b *Builder) build(a *Action) (err error) {
 	if err != nil {
 		return err
 	}
+		pc, filename, line, _ = runtime.Caller(1)
+		fmt.Printf("      -- build3 -- %+v %+v %+v\n", pc, filename, line)
 
 	// Prepare Go import config.
 	// We start it off with a comment so it can't be empty, so icfg.Bytes() below is never nil.
@@ -680,60 +712,79 @@ func (b *Builder) build(a *Action) (err error) {
 		}
 		gofiles = append(gofiles, objdir+"_gomod_.go")
 	}
+		pc, filename, line, _ = runtime.Caller(1)
+		fmt.Printf("      -- build4 -- %+v %+v %+v\n", pc, filename, line)
 
 	// Compile Go.
 	objpkg := objdir + "_pkg_.a"
-	ofile, out, err := BuildToolchain.gc(b, a, objpkg, icfg.Bytes(), symabis, len(sfiles) > 0, gofiles)
-	if len(out) > 0 {
-		output := b.processOutput(out)
-		if p.Module != nil && !allowedVersion(p.Module.GoVersion) {
-			output += "note: module requires Go " + p.Module.GoVersion + "\n"
+	if len(gofiles) > 0 {
+		objpkg := objdir + "_pkg_.a"
+		ofile, out, err := BuildToolchain.gc(b, a, objpkg, icfg.Bytes(), symabis, len(sfiles) > 0, gofiles)
+		if len(out) > 0 {
+			output := b.processOutput(out)
+			if p.Module != nil && !allowedVersion(p.Module.GoVersion) {
+				output += "note: module requires Go " + p.Module.GoVersion + "\n"
+			}
+			b.showOutput(a, a.Package.Dir, a.Package.Desc(), output)
+			if err != nil && len(gofiles) > 0{
+				fmt.Printf("      -- build4.1 -- %+v %+v %+v\n", pc, filename, line)
+				fmt.Printf("%+v\n", err)
+				return errPrintedOutput
+			}
 		}
-		b.showOutput(a, a.Package.Dir, a.Package.Desc(), output)
+	
 		if err != nil {
-			return errPrintedOutput
+				fmt.Printf("      -- build4.1 -- %+v %+v %+v\n", pc, filename, line)
+				fmt.Printf("%+v\n", err)
+			if p.Module != nil && !allowedVersion(p.Module.GoVersion) {
+				b.showOutput(a, a.Package.Dir, a.Package.Desc(), "note: module requires Go "+p.Module.GoVersion)
+			}
+			return err
 		}
-	}
-	if err != nil {
-		if p.Module != nil && !allowedVersion(p.Module.GoVersion) {
-			b.showOutput(a, a.Package.Dir, a.Package.Desc(), "note: module requires Go "+p.Module.GoVersion)
+		if ofile != objpkg {
+			objects = append(objects, ofile)
 		}
-		return err
-	}
-	if ofile != objpkg {
-		objects = append(objects, ofile)
-	}
+			pc, filename, line, _ = runtime.Caller(1)
+			fmt.Printf("      -- build5 -- %+v %+v %+v\n", pc, filename, line)
 
-	// Copy .h files named for goos or goarch or goos_goarch
-	// to names using GOOS and GOARCH.
-	// For example, defs_linux_amd64.h becomes defs_GOOS_GOARCH.h.
-	_goos_goarch := "_" + cfg.Goos + "_" + cfg.Goarch
-	_goos := "_" + cfg.Goos
-	_goarch := "_" + cfg.Goarch
-	for _, file := range a.Package.HFiles {
-		name, ext := fileExtSplit(file)
-		switch {
-		case strings.HasSuffix(name, _goos_goarch):
-			targ := file[:len(name)-len(_goos_goarch)] + "_GOOS_GOARCH." + ext
-			if err := b.copyFile(objdir+targ, filepath.Join(a.Package.Dir, file), 0666, true); err != nil {
-				return err
-			}
-		case strings.HasSuffix(name, _goarch):
-			targ := file[:len(name)-len(_goarch)] + "_GOARCH." + ext
-			if err := b.copyFile(objdir+targ, filepath.Join(a.Package.Dir, file), 0666, true); err != nil {
-				return err
-			}
-		case strings.HasSuffix(name, _goos):
-			targ := file[:len(name)-len(_goos)] + "_GOOS." + ext
-			if err := b.copyFile(objdir+targ, filepath.Join(a.Package.Dir, file), 0666, true); err != nil {
-				return err
+		// Copy .h files named for goos or goarch or goos_goarch
+		// to names using GOOS and GOARCH.
+		// For example, defs_linux_amd64.h becomes defs_GOOS_GOARCH.h.
+		_goos_goarch := "_" + cfg.Goos + "_" + cfg.Goarch
+		_goos := "_" + cfg.Goos
+		_goarch := "_" + cfg.Goarch
+		for _, file := range a.Package.HFiles {
+			name, ext := fileExtSplit(file)
+			switch {
+			case strings.HasSuffix(name, _goos_goarch):
+				targ := file[:len(name)-len(_goos_goarch)] + "_GOOS_GOARCH." + ext
+				if err := b.copyFile(objdir+targ, filepath.Join(a.Package.Dir, file), 0666, true); err != nil {
+					return err
+				}
+			case strings.HasSuffix(name, _goarch):
+				targ := file[:len(name)-len(_goarch)] + "_GOARCH." + ext
+				if err := b.copyFile(objdir+targ, filepath.Join(a.Package.Dir, file), 0666, true); err != nil {
+					return err
+				}
+			case strings.HasSuffix(name, _goos):
+				targ := file[:len(name)-len(_goos)] + "_GOOS." + ext
+				if err := b.copyFile(objdir+targ, filepath.Join(a.Package.Dir, file), 0666, true); err != nil {
+					return err
+				}
 			}
 		}
+	
 	}
+		pc, filename, line, _ = runtime.Caller(1)
+		fmt.Printf("      -- build6 -- %+v %+v %+v\n", pc, filename, line)
 
 	for _, file := range cfiles {
 		out := file[:len(file)-len(".c")] + ".o"
+		fmt.Printf(" -- build cfiles: %s -> %s\n", file, out)
 		if err := BuildToolchain.cc(b, a, objdir+out, file); err != nil {
+			
+			fmt.Printf("      -- build6.1 -- BuildToolchain.cc: %+v\n", err)
+			//~ os.Exit(1)
 			return err
 		}
 		objects = append(objects, out)
@@ -743,10 +794,13 @@ func (b *Builder) build(a *Action) (err error) {
 	if len(sfiles) > 0 {
 		ofiles, err := BuildToolchain.asm(b, a, sfiles)
 		if err != nil {
+			fmt.Printf("      -- build6.2 -- BuildToolchain.asm: %+v\n", err)
 			return err
 		}
 		objects = append(objects, ofiles...)
 	}
+		pc, filename, line, _ = runtime.Caller(1)
+		fmt.Printf("      -- build7 -- %+v %+v %+v\n", pc, filename, line)
 
 	// For gccgo on ELF systems, we write the build ID as an assembler file.
 	// This lets us set the SHF_EXCLUDE flag.
@@ -776,6 +830,8 @@ func (b *Builder) build(a *Action) (err error) {
 	for _, syso := range a.Package.SysoFiles {
 		objects = append(objects, filepath.Join(a.Package.Dir, syso))
 	}
+		pc, filename, line, _ = runtime.Caller(1)
+		fmt.Printf("      -- build8 -- %+v %+v %+v\n", pc, filename, line)
 
 	// Pack into archive in objdir directory.
 	// If the Go compiler wrote an archive, we only need to add the
@@ -793,6 +849,8 @@ func (b *Builder) build(a *Action) (err error) {
 	}
 
 	a.built = objpkg
+		pc, filename, line, _ = runtime.Caller(1)
+		fmt.Printf("end   -- build9 -- %+v %+v %+v\n", pc, filename, line)
 	return nil
 }
 
@@ -1209,9 +1267,18 @@ func (b *Builder) link(a *Action) (err error) {
 			return err
 		}
 	}
-
-	if err := BuildToolchain.ld(b, a, a.Target, importcfg, a.Deps[0].built); err != nil {
-		return err
+	
+	gofiles := str.StringList(a.Package.GoFiles)
+	if len(gofiles) > 0 {
+		if err := BuildToolchain.ld(b, a, a.Target, importcfg, a.Deps[0].built); err != nil {
+			//~ os.Exit(1)
+			return err
+		}
+	} else {
+		if err := BuildToolchain.ldc(b, a, a.Target, importcfg, a.Deps[0].built); err != nil {
+			//~ os.Exit(1)
+			return err
+		}
 	}
 
 	// Update the binary with the final build ID.
@@ -1930,6 +1997,7 @@ func (b *Builder) runOut(a *Action, dir string, env []string, cmdargs ...interfa
 		// @foo anywhere in the command line (even following --) as meaning
 		// "read and insert arguments from the file named foo."
 		// Don't say anything that might be misinterpreted that way.
+		fmt.Printf("%s\n", arg)
 		if strings.HasPrefix(arg, "@") {
 			return nil, fmt.Errorf("invalid command-line argument %s in command: %s", arg, joinUnambiguously(cmdline))
 		}
@@ -2100,6 +2168,8 @@ type toolchain interface {
 	pack(b *Builder, a *Action, afile string, ofiles []string) error
 	// ld runs the linker to create an executable starting at mainpkg.
 	ld(b *Builder, root *Action, out, importcfg, mainpkg string) error
+	// ld runs the linker to create an executable starting at mainpkg.
+	ldc(b *Builder, root *Action, out, importcfg, mainpkg string) error
 	// ldShared runs the linker to create a shared library containing the pkgs built by toplevelactions
 	ldShared(b *Builder, root *Action, toplevelactions []*Action, out, importcfg string, allactions []*Action) error
 
@@ -2141,6 +2211,10 @@ func (noToolchain) pack(b *Builder, a *Action, afile string, ofiles []string) er
 }
 
 func (noToolchain) ld(b *Builder, root *Action, out, importcfg, mainpkg string) error {
+	return noCompiler()
+}
+
+func (noToolchain) ldc(b *Builder, root *Action, out, importcfg, mainpkg string) error {
 	return noCompiler()
 }
 
