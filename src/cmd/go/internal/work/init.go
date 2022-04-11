@@ -106,6 +106,7 @@ func instrumentInit() {
 
 func buildModeInit() {
 	gccgo := cfg.BuildToolchainName == "gccgo"
+	// cc := cfg.BuildToolchainName == "cc" // TODO(computermouth)
 	var codegenArg string
 
 	// Configure the build mode first, then verify that it is supported.

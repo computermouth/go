@@ -57,6 +57,17 @@ func ForCompiler(fset *token.FileSet, compiler string, lookup Lookup) types.Impo
 			lookup:   lookup,
 		}
 
+	case "cc":
+		var inst ccimporter.CcInstallation
+		if err := inst.InitFromDriver("cc"); err != nil {
+			return nil
+		}
+		return &ccimports{
+			packages: make(map[string]*types.Package),
+			importer: inst.GetImporter(nil, nil),
+			lookup:   lookup,
+		}
+
 	case "source":
 		if lookup != nil {
 			panic("source importer for custom import path lookup not supported (issue #13847).")

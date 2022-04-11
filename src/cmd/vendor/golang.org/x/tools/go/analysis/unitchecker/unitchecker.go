@@ -209,6 +209,9 @@ func run(fset *token.FileSet, cfg *Config, analyzers []*analysis.Analyzer) ([]re
 			if cfg.Compiler == "gccgo" && cfg.Standard[path] {
 				return nil, nil // fall back to default gccgo lookup
 			}
+			if cfg.Compiler == "cc" && cfg.Standard[path] { // TODO(computermouth)
+				return nil, nil // fall back to default cc lookup
+			}
 			return nil, fmt.Errorf("no package file for %q", path)
 		}
 		return os.Open(file)

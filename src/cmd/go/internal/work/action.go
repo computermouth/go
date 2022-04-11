@@ -344,6 +344,19 @@ func readpkglist(shlibpath string) (pkgs []*load.Package) {
 				pkgs = append(pkgs, load.LoadImportWithFlags(t, base.Cwd, nil, &stk, nil, 0))
 			}
 		}
+	} else if cfg.BuildToolchainName == "cc" { // TODO(computermouth)
+		f, _ := elf.Open(shlibpath)
+		sect := f.Section(".go_export")
+		data, _ := sect.Data()
+		scanner := bufio.NewScanner(bytes.NewBuffer(data))
+		for scanner.Scan() {
+			t := scanner.Text()
+			if strings.HasPrefix(t, "pkgpath ") {
+				t = strings.TrimPrefix(t, "pkgpath ")
+				t = strings.TrimSuffix(t, ";")
+				pkgs = append(pkgs, load.LoadImportWithFlags(t, base.Cwd, nil, &stk, nil, 0))
+			}
+		}
 	} else {
 		pkglistbytes, err := buildid.ReadELFNote(shlibpath, "Go\x00\x00", 1)
 		if err != nil {
@@ -423,6 +436,15 @@ func (b *Builder) CompileAction(mode, depMode BuildMode, p *load.Package) *Actio
 
 			// gccgo standard library is "fake" too.
 			if cfg.BuildToolchainName == "gccgo" {
+				// the target name is needed for cgo.
+				a.Mode = "gccgo stdlib"
+				a.Target = p.Target
+				a.Func = nil
+				return a
+			}
+
+			// cc standard library is "fake" too.
+			if cfg.BuildToolchainName == "cc" { // TODO(computermouth)
 				// the target name is needed for cgo.
 				a.Mode = "gccgo stdlib"
 				a.Target = p.Target
@@ -687,9 +709,17 @@ func (b *Builder) addTransitiveLinkDeps(a, a1 *Action, shlib string) {
 func (b *Builder) addInstallHeaderAction(a *Action) {
 	// Install header for cgo in c-archive and c-shared modes.
 	p := a.Package
-	if p.UsesCgo() && (cfg.BuildBuildmode == "c-archive" || cfg.BuildBuildmode == "c-shared") {
+	if (p.UsesCgo() || cfg.BuildContext.Compiler == "cc") && (cfg.BuildBuildmode == "c-archive" || cfg.BuildBuildmode == "c-shared") {
 		hdrTarget := a.Target[:len(a.Target)-len(filepath.Ext(a.Target))] + ".h"
 		if cfg.BuildContext.Compiler == "gccgo" && cfg.BuildO == "" {
+			// For the header file, remove the "lib"
+			// added by go/build, so we generate pkg.h
+			// rather than libpkg.h.
+			dir, file := filepath.Split(hdrTarget)
+			file = strings.TrimPrefix(file, "lib")
+			hdrTarget = filepath.Join(dir, file)
+		}
+		if cfg.BuildContext.Compiler == "cc" && cfg.BuildO == "" { // TODO(computermouth)
 			// For the header file, remove the "lib"
 			// added by go/build, so we generate pkg.h
 			// rather than libpkg.h.
@@ -765,7 +795,7 @@ func (b *Builder) linkSharedAction(mode, depMode BuildMode, shlib string, a1 *Ac
 			Deps:    []*Action{a1},
 		}
 		a.Target = filepath.Join(a.Objdir, shlib)
-		if cfg.BuildToolchainName != "gccgo" {
+		if cfg.BuildToolchainName != "gccgo" && cfg.BuildToolchainName != "cc" {
 			add := func(a1 *Action, pkg string, force bool) {
 				for _, a2 := range a1.Deps {
 					if a2.Package != nil && a2.Package.ImportPath == pkg {
@@ -823,7 +853,7 @@ func (b *Builder) linkSharedAction(mode, depMode BuildMode, shlib string, a1 *Ac
 				}
 			}
 			// TODO(rsc): Find out and explain here why gccgo is different.
-			if cfg.BuildToolchainName == "gccgo" {
+			if cfg.BuildToolchainName == "gccgo" || cfg.BuildToolchainName == "cc" {
 				pkgDir = filepath.Join(pkgDir, "shlibs")
 			}
 			target := filepath.Join(pkgDir, shlib)

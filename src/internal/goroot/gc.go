@@ -24,6 +24,8 @@ func IsStandardPackage(goroot, compiler, path string) bool {
 		return err == nil
 	case "gccgo":
 		return gccgoSearch.isStandard(path)
+	case "cc":
+		return gccgoSearch.isStandard(path) // TODO(computermouth)
 	default:
 		panic("unknown compiler " + compiler)
 	}

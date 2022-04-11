@@ -540,7 +540,7 @@ Environment variables for use with cgo:
 
 	AR
 		The command to use to manipulate library archives when
-		building with the gccgo compiler.
+		building with the gccgo or cc compiler.
 		The default is 'ar'.
 	CC
 		The command to use to compile C code.
@@ -813,7 +813,7 @@ During a particular build, the following words are satisfied:
 	  GOOS environment variable.
 	- the target architecture, as spelled by runtime.GOARCH, set with the
 	  GOARCH environment variable.
-	- the compiler being used, either "gc" or "gccgo"
+	- the compiler being used, either "gc", "gccgo", or "cc"
 	- "cgo", if the cgo command is supported (see CGO_ENABLED in
 	  'go help environment').
 	- a term for each Go major release, through the current version:

@@ -18,32 +18,32 @@ import (
 	"cmd/go/internal/str"
 )
 
-// The Gccgo toolchain.
+// The CC toolchain.
 
-type gccgoToolchain struct{}
+type ccToolchain struct{}
 
-var GccgoName, GccgoBin string
-var gccgoErr error
+var CcName, CcBin string
+var ccgoErr error
 
 func init() {
-	GccgoName = cfg.Getenv("GCCGO")
-	if GccgoName == "" {
-		GccgoName = "gccgo"
+	CcName = cfg.Getenv("CC")
+	if CcName == "" {
+		CcName = "gcc"
 	}
-	GccgoBin, gccgoErr = exec.LookPath(GccgoName)
+	CcBin, ccgoErr = exec.LookPath(CcName)
 }
 
-func (gccgoToolchain) compiler() string {
-	checkGccgoBin()
-	return GccgoBin
+func (ccToolchain) compiler() string {
+	checkCcBin()
+	return CcBin
 }
 
-func (gccgoToolchain) linker() string {
-	checkGccgoBin()
-	return GccgoBin
+func (ccToolchain) linker() string {
+	checkCcBin()
+	return CcBin
 }
 
-func (gccgoToolchain) ar() string {
+func (ccToolchain) ar() string {
 	ar := cfg.Getenv("AR")
 	if ar == "" {
 		ar = "ar"
@@ -51,16 +51,16 @@ func (gccgoToolchain) ar() string {
 	return ar
 }
 
-func checkGccgoBin() {
-	if gccgoErr == nil {
+func checkCcBin() {
+	if ccgoErr == nil {
 		return
 	}
-	fmt.Fprintf(os.Stderr, "cmd/go: gccgo: %s\n", gccgoErr)
+	fmt.Fprintf(os.Stderr, "cmd/go: cc: %s\n", ccgoErr)
 	base.SetExitStatus(2)
 	base.Exit()
 }
 
-func (tools gccgoToolchain) gc(b *Builder, a *Action, archive string, importcfg []byte, symabis string, asmhdr bool, gofiles []string) (ofile string, output []byte, err error) {
+func (tools ccToolchain) gc(b *Builder, a *Action, archive string, importcfg []byte, symabis string, asmhdr bool, gofiles []string) (ofile string, output []byte, err error) {
 	p := a.Package
 	objdir := a.Objdir
 	out := "_go_.o"
@@ -69,14 +69,14 @@ func (tools gccgoToolchain) gc(b *Builder, a *Action, archive string, importcfg 
 	gcargs = append(gcargs, b.gccArchArgs()...)
 	gcargs = append(gcargs, "-fdebug-prefix-map="+b.WorkDir+"=/tmp/go-build")
 	gcargs = append(gcargs, "-gno-record-gcc-switches")
-	if pkgpath := gccgoPkgpath(p); pkgpath != "" {
+	if pkgpath := ccPkgpath(p); pkgpath != "" {
 		gcargs = append(gcargs, "-fgo-pkgpath="+pkgpath)
 	}
 	if p.Internal.LocalPrefix != "" {
 		gcargs = append(gcargs, "-fgo-relative-import-path="+p.Internal.LocalPrefix)
 	}
 
-	args := str.StringList(tools.compiler(), "-c", gcargs, "-o", ofile, forcedGccgoflags)
+	args := str.StringList(tools.compiler(), "-c", gcargs, "-o", ofile, forcedCcflags)
 	if importcfg != nil {
 		if b.gccSupportsFlag(args[:1], "-fgo-importcfg=/dev/null") {
 			if err := b.writeFile(objdir+"importcfg", importcfg); err != nil {
@@ -95,7 +95,7 @@ func (tools gccgoToolchain) gc(b *Builder, a *Action, archive string, importcfg 
 		args = append(args, "-ffile-prefix-map="+base.Cwd+"=.")
 		args = append(args, "-ffile-prefix-map="+b.WorkDir+"=/tmp/go-build")
 	}
-	args = append(args, a.Package.Internal.Gccgoflags...)
+	args = append(args, a.Package.Internal.Ccflags...)
 	for _, f := range gofiles {
 		args = append(args, mkAbs(p.Dir, f))
 	}
@@ -104,10 +104,11 @@ func (tools gccgoToolchain) gc(b *Builder, a *Action, archive string, importcfg 
 	return ofile, output, err
 }
 
+/*
 // buildImportcfgSymlinks builds in root a tree of symlinks
 // implementing the directives from importcfg.
 // This serves as a temporary transition mechanism until
-// we can depend on gccgo reading an importcfg directly.
+// we can depend on ##### reading an importcfg directly.
 // (The Go 1.9 and later gc compilers already do.)
 func buildImportcfgSymlinks(b *Builder, root string, importcfg []byte) error {
 	for lineNum, line := range strings.Split(string(importcfg), "\n") {
@@ -136,7 +137,7 @@ func buildImportcfgSymlinks(b *Builder, root string, importcfg []byte) error {
 			if before == "" || after == "" {
 				return fmt.Errorf(`importcfg:%d: invalid packagefile: syntax is "packagefile path=filename": %s`, lineNum, line)
 			}
-			archive := gccgoArchive(root, before)
+			archive := ccArchive(root, before)
 			if err := b.Mkdir(filepath.Dir(archive)); err != nil {
 				return err
 			}
@@ -147,8 +148,8 @@ func buildImportcfgSymlinks(b *Builder, root string, importcfg []byte) error {
 			if before == "" || after == "" {
 				return fmt.Errorf(`importcfg:%d: invalid importmap: syntax is "importmap old=new": %s`, lineNum, line)
 			}
-			beforeA := gccgoArchive(root, before)
-			afterA := gccgoArchive(root, after)
+			beforeA := ccArchive(root, before)
+			afterA := ccArchive(root, after)
 			if err := b.Mkdir(filepath.Dir(beforeA)); err != nil {
 				return err
 			}
@@ -159,13 +160,14 @@ func buildImportcfgSymlinks(b *Builder, root string, importcfg []byte) error {
 				return err
 			}
 		case "packageshlib":
-			return fmt.Errorf("gccgo -importcfg does not support shared libraries")
+			return fmt.Errorf("cc -importcfg does not support shared libraries")
 		}
 	}
 	return nil
 }
+*/
 
-func (tools gccgoToolchain) asm(b *Builder, a *Action, sfiles []string) ([]string, error) {
+func (tools ccToolchain) asm(b *Builder, a *Action, sfiles []string) ([]string, error) {
 	p := a.Package
 	var ofiles []string
 	for _, sfile := range sfiles {
@@ -174,7 +176,7 @@ func (tools gccgoToolchain) asm(b *Builder, a *Action, sfiles []string) ([]strin
 		ofiles = append(ofiles, ofile)
 		sfile = mkAbs(p.Dir, sfile)
 		defs := []string{"-D", "GOOS_" + cfg.Goos, "-D", "GOARCH_" + cfg.Goarch}
-		if pkgpath := gccgoCleanPkgpath(p); pkgpath != "" {
+		if pkgpath := ccCleanPkgpath(p); pkgpath != "" {
 			defs = append(defs, `-D`, `GOPKGPATH=`+pkgpath)
 		}
 		defs = tools.maybePIC(defs)
@@ -187,18 +189,18 @@ func (tools gccgoToolchain) asm(b *Builder, a *Action, sfiles []string) ([]strin
 	return ofiles, nil
 }
 
-func (gccgoToolchain) symabis(b *Builder, a *Action, sfiles []string) (string, error) {
+func (ccToolchain) symabis(b *Builder, a *Action, sfiles []string) (string, error) {
 	return "", nil
 }
 
-func gccgoArchive(basedir, imp string) string {
+func ccArchive(basedir, imp string) string {
 	end := filepath.FromSlash(imp + ".a")
 	afile := filepath.Join(basedir, end)
 	// add "lib" to the final element
 	return filepath.Join(filepath.Dir(afile), "lib"+filepath.Base(afile))
 }
 
-func (tools gccgoToolchain) pack(b *Builder, a *Action, afile string, ofiles []string) error {
+func (tools ccToolchain) pack(b *Builder, a *Action, afile string, ofiles []string) error {
 	p := a.Package
 	objdir := a.Objdir
 	var absOfiles []string
@@ -226,9 +228,9 @@ func (tools gccgoToolchain) pack(b *Builder, a *Action, afile string, ofiles []s
 	return nil
 }
 
-func (tools gccgoToolchain) link(b *Builder, root *Action, out, importcfg string, allactions []*Action, buildmode, desc string) error {
-	// gccgo needs explicit linking with all package dependencies,
-	// and all LDFLAGS from cgo dependencies.
+func (tools ccToolchain) link(b *Builder, root *Action, out, importcfg string, allactions []*Action, buildmode, desc string) error {
+	// cc needs explicit linking with all package dependencies,
+	// and all LDFLAGS from dependencies.
 	afiles := []string{}
 	shlibs := []string{}
 	ldflags := b.gccArchArgs()
@@ -359,9 +361,9 @@ func (tools gccgoToolchain) link(b *Builder, root *Action, out, importcfg string
 	}
 
 	for _, a := range allactions {
-		// Gather CgoLDFLAGS, but not from standard packages.
-		// The go tool can dig up runtime/cgo from GOROOT and
-		// think that it should use its CgoLDFLAGS, but gccgo
+		// Gather ###LDFLAGS, but not from standard packages.
+		// The go tool can dig up runtime/### from GOROOT and
+		// think that it should use its CgoLDFLAGS, but #####
 		// doesn't use runtime/cgo.
 		if a.Package == nil {
 			continue
@@ -369,6 +371,7 @@ func (tools gccgoToolchain) link(b *Builder, root *Action, out, importcfg string
 		if !a.Package.Standard {
 			cgoldflags = append(cgoldflags, a.Package.CgoLDFLAGS...)
 		}
+		/*  -- TODO(computermouth) -- maybe later
 		if len(a.Package.CgoFiles) > 0 {
 			usesCgo = true
 		}
@@ -384,6 +387,7 @@ func (tools gccgoToolchain) link(b *Builder, root *Action, out, importcfg string
 		if len(a.Package.FFiles) > 0 {
 			fortran = true
 		}
+		*/
 	}
 
 	wholeArchive := []string{"-Wl,--whole-archive"}
@@ -480,7 +484,7 @@ func (tools gccgoToolchain) link(b *Builder, root *Action, out, importcfg string
 		ldflags = append(ldflags, "-shared", "-nostdlib", "-lgo", "-lgcc_s", "-lgcc", "-lc")
 
 	default:
-		base.Fatalf("-buildmode=%s not supported for gccgo", buildmode)
+		base.Fatalf("-buildmode=%s not supported for cc", buildmode)
 	}
 
 	switch buildmode {
@@ -504,7 +508,7 @@ func (tools gccgoToolchain) link(b *Builder, root *Action, out, importcfg string
 		}
 	}
 
-	if err := b.run(root, ".", desc, nil, tools.linker(), "-o", out, ldflags, forcedGccgoflags, root.Package.Internal.Gccgoflags); err != nil {
+	if err := b.run(root, ".", desc, nil, tools.linker(), "-o", out, ldflags, forcedCcflags, root.Package.Internal.Ccflags); err != nil {
 		return err
 	}
 
@@ -517,21 +521,21 @@ func (tools gccgoToolchain) link(b *Builder, root *Action, out, importcfg string
 	return nil
 }
 
-func (tools gccgoToolchain) ld(b *Builder, root *Action, out, importcfg, mainpkg string) error {
+func (tools ccToolchain) ld(b *Builder, root *Action, out, importcfg, mainpkg string) error {
 	return tools.link(b, root, out, importcfg, root.Deps, ldBuildmode, root.Package.ImportPath)
 }
 
-func (tools gccgoToolchain) ldShared(b *Builder, root *Action, toplevelactions []*Action, out, importcfg string, allactions []*Action) error {
+func (tools ccToolchain) ldShared(b *Builder, root *Action, toplevelactions []*Action, out, importcfg string, allactions []*Action) error {
 	return tools.link(b, root, out, importcfg, allactions, "shared", out)
 }
 
-func (tools gccgoToolchain) cc(b *Builder, a *Action, ofile, cfile string) error {
+func (tools ccToolchain) cc(b *Builder, a *Action, ofile, cfile string) error {
 	p := a.Package
 	inc := filepath.Join(cfg.GOROOT, "pkg", "include")
 	cfile = mkAbs(p.Dir, cfile)
 	defs := []string{"-D", "GOOS_" + cfg.Goos, "-D", "GOARCH_" + cfg.Goarch}
 	defs = append(defs, b.gccArchArgs()...)
-	if pkgpath := gccgoCleanPkgpath(p); pkgpath != "" {
+	if pkgpath := ccCleanPkgpath(p); pkgpath != "" {
 		defs = append(defs, `-D`, `GOPKGPATH="`+pkgpath+`"`)
 	}
 	compiler := envList("CC", cfg.DefaultCC(cfg.Goos, cfg.Goarch))
@@ -553,7 +557,7 @@ func (tools gccgoToolchain) cc(b *Builder, a *Action, ofile, cfile string) error
 }
 
 // maybePIC adds -fPIC to the list of arguments if needed.
-func (tools gccgoToolchain) maybePIC(args []string) []string {
+func (tools ccToolchain) maybePIC(args []string) []string {
 	switch cfg.BuildBuildmode {
 	case "c-shared", "shared", "plugin":
 		args = append(args, "-fPIC")
@@ -561,14 +565,14 @@ func (tools gccgoToolchain) maybePIC(args []string) []string {
 	return args
 }
 
-func gccgoPkgpath(p *load.Package) string {
+func ccPkgpath(p *load.Package) string {
 	if p.Internal.Build.IsCommand() && !p.Internal.ForceLibrary {
 		return ""
 	}
 	return p.ImportPath
 }
 
-func gccgoCleanPkgpath(p *load.Package) string {
+func ccCleanPkgpath(p *load.Package) string {
 	clean := func(r rune) rune {
 		switch {
 		case 'A' <= r && r <= 'Z', 'a' <= r && r <= 'z',
@@ -577,5 +581,5 @@ func gccgoCleanPkgpath(p *load.Package) string {
 		}
 		return '_'
 	}
-	return strings.Map(clean, gccgoPkgpath(p))
+	return strings.Map(clean, ccPkgpath(p))
 }

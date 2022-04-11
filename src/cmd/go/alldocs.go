@@ -131,11 +131,13 @@
 // 	-buildmode mode
 // 		build mode to use. See 'go help buildmode' for more.
 // 	-compiler name
-// 		name of compiler to use, as in runtime.Compiler (gccgo or gc).
+// 		name of compiler to use, as in runtime.Compiler (gccgo, gc, or cc).
 // 	-gccgoflags '[pattern=]arg list'
 // 		arguments to pass on each gccgo compiler/linker invocation.
 // 	-gcflags '[pattern=]arg list'
 // 		arguments to pass on each go tool compile invocation.
+// 	-ccflags '[pattern=]arg list'
+// 		arguments to pass on each cc tool compile invocation.
 // 	-installsuffix suffix
 // 		a suffix to use in the name of the package installation directory,
 // 		in order to keep output separate from default builds.
@@ -182,7 +184,7 @@
 // 		For example, instead of running asm, the go command will run
 // 		'cmd args /path/to/asm <arguments for asm>'.
 //
-// The -asmflags, -gccgoflags, -gcflags, and -ldflags flags accept a
+// The -asmflags, -gccgoflags, -gcflags, -ccflags, and -ldflags flags accept a
 // space-separated list of arguments to pass to an underlying tool
 // during the build. To embed spaces in an element in the list, surround
 // it with either single or double quotes. The argument list may be
@@ -1521,7 +1523,7 @@
 // 	  GOOS environment variable.
 // 	- the target architecture, as spelled by runtime.GOARCH, set with the
 // 	  GOARCH environment variable.
-// 	- the compiler being used, either "gc" or "gccgo"
+// 	- the compiler being used, either "gc", "gccgo", or "cc"
 // 	- "cgo", if the cgo command is supported (see CGO_ENABLED in
 // 	  'go help environment').
 // 	- a term for each Go major release, through the current version:
@@ -1747,7 +1749,7 @@
 //
 // 	AR
 // 		The command to use to manipulate library archives when
-// 		building with the gccgo compiler.
+// 		building with the gccgo or cc compiler.
 // 		The default is 'ar'.
 // 	CC
 // 		The command to use to compile C code.

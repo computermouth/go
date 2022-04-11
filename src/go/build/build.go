@@ -251,7 +251,7 @@ func (ctxt *Context) gopath() []string {
 // that do not exist.
 func (ctxt *Context) SrcDirs() []string {
 	var all []string
-	if ctxt.GOROOT != "" && ctxt.Compiler != "gccgo" {
+	if ctxt.GOROOT != "" && ctxt.Compiler != "gccgo" && ctxt.Compiler != "cc" {
 		dir := ctxt.joinPath(ctxt.GOROOT, "src")
 		if ctxt.isDir(dir) {
 			all = append(all, dir)
@@ -525,6 +525,8 @@ func (ctxt *Context) Import(path string, srcDir string, mode ImportMode) (*Packa
 		pkgtargetroot = "pkg/gccgo_" + ctxt.GOOS + "_" + ctxt.GOARCH + suffix
 	case "gc":
 		pkgtargetroot = "pkg/" + ctxt.GOOS + "_" + ctxt.GOARCH + suffix
+	case "cc": // TODO(computermouth)
+		pkgtargetroot = "pkg/" + ctxt.GOOS + "_" + ctxt.GOARCH + suffix
 	default:
 		// Save error for end of function.
 		pkgerr = fmt.Errorf("import %q: unknown compiler %q", path, ctxt.Compiler)
@@ -535,6 +537,8 @@ func (ctxt *Context) Import(path string, srcDir string, mode ImportMode) (*Packa
 			dir, elem := pathpkg.Split(p.ImportPath)
 			pkga = pkgtargetroot + "/" + dir + "lib" + elem + ".a"
 		case "gc":
+			pkga = pkgtargetroot + "/" + p.ImportPath + ".a"
+		case "cc": // TODO(computermouth)
 			pkga = pkgtargetroot + "/" + p.ImportPath + ".a"
 		}
 	}
@@ -572,7 +576,7 @@ func (ctxt *Context) Import(path string, srcDir string, mode ImportMode) (*Packa
 				// We found a potential import path for dir,
 				// but check that using it wouldn't find something
 				// else first.
-				if ctxt.GOROOT != "" && ctxt.Compiler != "gccgo" {
+				if ctxt.GOROOT != "" && ctxt.Compiler != "gccgo" && ctxt.Compiler != "cc" {
 					if dir := ctxt.joinPath(ctxt.GOROOT, "src", sub); ctxt.isDir(dir) {
 						p.ConflictDir = dir
 						goto Found
@@ -644,7 +648,7 @@ func (ctxt *Context) Import(path string, srcDir string, mode ImportMode) (*Packa
 				}
 				return false
 			}
-			if ctxt.Compiler != "gccgo" && searchVendor(ctxt.GOROOT, true) {
+			if ctxt.Compiler != "gccgo" && ctxt.Compiler != "cc" && searchVendor(ctxt.GOROOT, true) {
 				goto Found
 			}
 			for _, root := range gopath {
@@ -666,7 +670,7 @@ func (ctxt *Context) Import(path string, srcDir string, mode ImportMode) (*Packa
 			}
 			if gorootFirst {
 				dir := ctxt.joinPath(ctxt.GOROOT, "src", path)
-				if ctxt.Compiler != "gccgo" {
+				if ctxt.Compiler != "gccgo" && ctxt.Compiler != "cc" {
 					isDir := ctxt.isDir(dir)
 					binaryOnly = !isDir && mode&AllowBinary != 0 && pkga != "" && ctxt.isFile(ctxt.joinPath(ctxt.GOROOT, pkga))
 					if isDir || binaryOnly {
@@ -680,6 +684,12 @@ func (ctxt *Context) Import(path string, srcDir string, mode ImportMode) (*Packa
 			}
 		}
 		if ctxt.Compiler == "gccgo" && goroot.IsStandardPackage(ctxt.GOROOT, ctxt.Compiler, path) {
+			p.Dir = ctxt.joinPath(ctxt.GOROOT, "src", path)
+			p.Goroot = true
+			p.Root = ctxt.GOROOT
+			goto Found
+		}
+		if ctxt.Compiler == "cc" && goroot.IsStandardPackage(ctxt.GOROOT, ctxt.Compiler, path) { // TODO(computermouth)
 			p.Dir = ctxt.joinPath(ctxt.GOROOT, "src", path)
 			p.Goroot = true
 			p.Root = ctxt.GOROOT
@@ -702,7 +712,7 @@ func (ctxt *Context) Import(path string, srcDir string, mode ImportMode) (*Packa
 		// standard-vendored paths passed on the command line.
 		if ctxt.GOROOT != "" && tried.goroot == "" {
 			dir := ctxt.joinPath(ctxt.GOROOT, "src", path)
-			if ctxt.Compiler != "gccgo" {
+			if ctxt.Compiler != "gccgo" && ctxt.Compiler != "cc" {
 				isDir := ctxt.isDir(dir)
 				binaryOnly = !isDir && mode&AllowBinary != 0 && pkga != "" && ctxt.isFile(ctxt.joinPath(ctxt.GOROOT, pkga))
 				if isDir || binaryOnly {
@@ -759,6 +769,10 @@ Found:
 			// gccgo has no sources for GOROOT packages.
 			return p, nil
 		}
+		if ctxt.Compiler == "cc" && p.Goroot { // TODO(computermouth)
+			// gccgo has no sources for GOROOT packages.
+			return p, nil
+		}
 
 		// package was not found
 		return p, fmt.Errorf("cannot find package %q in:\n\t%s", path, p.Dir)
@@ -773,6 +787,11 @@ Found:
 
 	if ctxt.Compiler == "gccgo" && p.Goroot {
 		// gccgo has no sources for GOROOT packages.
+		return p, nil
+	}
+
+	if ctxt.Compiler == "cc" && p.Goroot { // TODO(computermouth)
+		// cc has no sources for GOROOT packages.
 		return p, nil
 	}
 

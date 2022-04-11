@@ -185,6 +185,7 @@ type PackageInternal struct {
 	Gcflags    []string // -gcflags for this package
 	Ldflags    []string // -ldflags for this package
 	Gccgoflags []string // -gccgoflags for this package
+	Ccflags    []string // -ccflags for this package
 }
 
 // A NoGoError indicates that no Go files for the package were applicable to the
@@ -1324,6 +1325,11 @@ func disallowInternal(srcDir string, importer *Package, importerPath string, p *
 		return p
 	}
 
+	// We can't check standard packages with cc.
+	if cfg.BuildContext.Compiler == "cc" && p.Standard {
+		return p
+	}
+
 	// The sort package depends on internal/reflectlite, but during bootstrap
 	// the path rewriting causes the normal internal checks to fail.
 	// Instead, just ignore the internal rules during bootstrap.
@@ -1671,6 +1677,8 @@ func (p *Package) load(path string, stk *ImportStack, importPos []token.Position
 			// Override all the usual logic and force it into the tool directory.
 			if cfg.BuildToolchainName == "gccgo" {
 				p.Target = filepath.Join(base.ToolDir, elem)
+			} else if cfg.BuildToolchainName == "cc" {
+				p.Target = filepath.Join(base.ToolDir, elem)
 			} else {
 				p.Target = filepath.Join(cfg.GOROOTpkg, "tool", full)
 			}
@@ -1696,6 +1704,8 @@ func (p *Package) load(path string, stk *ImportStack, importPos []token.Position
 			if err == nil {
 				libname := strings.TrimSpace(string(shlib))
 				if cfg.BuildContext.Compiler == "gccgo" {
+					p.Shlib = filepath.Join(p.Internal.Build.PkgTargetRoot, "shlibs", libname)
+				} else if cfg.BuildContext.Compiler == "cc" {
 					p.Shlib = filepath.Join(p.Internal.Build.PkgTargetRoot, "shlibs", libname)
 				} else {
 					p.Shlib = filepath.Join(p.Internal.Build.PkgTargetRoot, libname)
@@ -1724,7 +1734,7 @@ func (p *Package) load(path string, stk *ImportStack, importPos []token.Position
 	if p.UsesCgo() {
 		addImport("unsafe", true)
 	}
-	if p.UsesCgo() && (!p.Standard || !cgoExclude[p.ImportPath]) && cfg.BuildContext.Compiler != "gccgo" {
+	if p.UsesCgo() && (!p.Standard || !cgoExclude[p.ImportPath]) && cfg.BuildContext.Compiler != "gccgo" && cfg.BuildContext.Compiler != "cc" {
 		addImport("runtime/cgo", true)
 	}
 	if p.UsesCgo() && (!p.Standard || !cgoSyscallExclude[p.ImportPath]) {
@@ -1820,7 +1830,7 @@ func (p *Package) load(path string, stk *ImportStack, importPos []token.Position
 	p.collectDeps()
 
 	// unsafe is a fake package.
-	if p.Standard && (p.ImportPath == "unsafe" || cfg.BuildContext.Compiler == "gccgo") {
+	if p.Standard && (p.ImportPath == "unsafe" || cfg.BuildContext.Compiler == "gccgo" || cfg.BuildContext.Compiler == "cc") {
 		p.Target = ""
 	}
 
@@ -1936,7 +1946,7 @@ func LinkerDeps(p *Package) []string {
 	deps := []string{"runtime"}
 
 	// External linking mode forces an import of runtime/cgo.
-	if externalLinkingForced(p) && cfg.BuildContext.Compiler != "gccgo" {
+	if externalLinkingForced(p) && cfg.BuildContext.Compiler != "gccgo" && cfg.BuildContext.Compiler != "cc" {
 		deps = append(deps, "runtime/cgo")
 	}
 	// On ARM with GOARM=5, it forces an import of math, for soft floating point.
@@ -2225,6 +2235,7 @@ func setToolFlags(pkgs ...*Package) {
 		p.Internal.Gcflags = BuildGcflags.For(p)
 		p.Internal.Ldflags = BuildLdflags.For(p)
 		p.Internal.Gccgoflags = BuildGccgoflags.For(p)
+		p.Internal.Ccflags = BuildCcflags.For(p)
 	}
 }
 

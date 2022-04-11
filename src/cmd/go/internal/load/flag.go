@@ -16,6 +16,7 @@ var (
 	BuildGcflags    PerPackageFlag // -gcflags
 	BuildLdflags    PerPackageFlag // -ldflags
 	BuildGccgoflags PerPackageFlag // -gccgoflags
+	BuildCcflags    PerPackageFlag // -ccflags
 )
 
 // A PerPackageFlag is a command-line flag implementation (a flag.Value)

@@ -58,7 +58,7 @@ func defaultContext() build.Context {
 	ctxt.JoinPath = filepath.Join // back door to say "do not use go command"
 
 	ctxt.GOROOT = findGOROOT()
-	if runtime.Compiler != "gccgo" {
+	if runtime.Compiler != "gccgo" && runtime.Compiler != "cc" {
 		// Note that we must use runtime.GOOS and runtime.GOARCH here,
 		// as the tool directory does not move based on environment
 		// variables. This matches the initialization of ToolDir in
@@ -304,6 +304,11 @@ func findGOROOT() string {
 	def := filepath.Clean(runtime.GOROOT())
 	if runtime.Compiler == "gccgo" {
 		// gccgo has no real GOROOT, and it certainly doesn't
+		// depend on the executable's location.
+		return def
+	}
+	if runtime.Compiler == "cc" {
+		// cc has no real GOROOT, and it certainly doesn't
 		// depend on the executable's location.
 		return def
 	}

@@ -189,6 +189,7 @@ var (
 	forcedGcflags    []string // internally-forced flags for cmd/compile
 	forcedLdflags    []string // internally-forced flags for cmd/link
 	forcedGccgoflags []string // internally-forced flags for gccgo
+	forcedCcflags    []string // internally-forced flags for cc
 )
 
 var BuildToolchain toolchain = noToolchain{}
@@ -205,6 +206,8 @@ func (c buildCompiler) Set(value string) error {
 		BuildToolchain = gcToolchain{}
 	case "gccgo":
 		BuildToolchain = gccgoToolchain{}
+	case "cc":
+		BuildToolchain = ccToolchain{}
 	default:
 		return fmt.Errorf("unknown compiler %q", value)
 	}
@@ -221,7 +224,7 @@ func (c buildCompiler) String() string {
 
 func init() {
 	switch build.Default.Compiler {
-	case "gc", "gccgo":
+	case "gc", "gccgo", "cc":
 		buildCompiler{}.Set(build.Default.Compiler)
 	}
 }
@@ -366,9 +369,22 @@ func runBuild(cmd *base.Command, args []string) {
 		if load.BuildLdflags.Present() {
 			fmt.Println("go build: when using gccgo toolchain, please pass linker flags using -gccgoflags, not -ldflags")
 		}
+		if load.BuildCcflags.Present() {
+			fmt.Println("go build: when using gccgo toolchain, please pass compiler flags using -gccgoflags, not -ccflags")
+		}
 	case "gc":
 		if load.BuildGccgoflags.Present() {
 			fmt.Println("go build: when using gc toolchain, please pass compile flags using -gcflags, and linker flags using -ldflags")
+		}
+		if load.BuildCcflags.Present() {
+			fmt.Println("go build: when using gc toolchain, please pass compiler flags using -gccgoflags, not -ccflags")
+		}
+	case "cc":
+		if load.BuildGcflags.Present() {
+			fmt.Println("go build: when using cc toolchain, please pass compiler flags using -ccflags, not -gcflags")
+		}
+		if load.BuildGccgoflags.Present() {
+			fmt.Println("go build: when using cc toolchain, please pass compile flags using -ccflags, and linker flags using -gccgoflags")
 		}
 	}
 

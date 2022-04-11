@@ -305,6 +305,21 @@ func (b *Builder) buildActionID(a *Action) cache.ActionID {
 			// are unlikely to make any difference anyhow.
 			fmt.Fprintf(h, "asm %q\n", id)
 		}
+
+	case "cc":
+		id, err := b.ccToolID(BuildToolchain.compiler(), "cc")
+		if err != nil {
+			base.Fatalf("%v", err)
+		}
+		fmt.Fprintf(h, "compile %s %q %q\n", id, forcedCcflags, p.Internal.Ccflags)
+		fmt.Fprintf(h, "pkgpath %s\n", ccPkgpath(p))
+		fmt.Fprintf(h, "ar %q\n", BuildToolchain.(ccToolchain).ar())
+		if len(p.SFiles) > 0 {
+			id, _ = b.ccToolID(BuildToolchain.compiler(), "assembler-with-cpp")
+			// Ignore error; different assembler versions
+			// are unlikely to make any difference anyhow.
+			fmt.Fprintf(h, "asm %q\n", id)
+		}
 	}
 
 	// Input files.
@@ -606,6 +621,9 @@ func (b *Builder) build(a *Action) (err error) {
 		if cfg.BuildToolchainName == "gccgo" {
 			cgoObjects = append(cgoObjects, a.Objdir+"_cgo_flags")
 		}
+		if cfg.BuildToolchainName == "cc" { // TODO(computermouth)
+			cgoObjects = append(cgoObjects, a.Objdir+"_cgo_flags")
+		}
 		cgoObjects = append(cgoObjects, outObj...)
 		gofiles = append(gofiles, outGo...)
 
@@ -674,7 +692,7 @@ func (b *Builder) build(a *Action) (err error) {
 		fmt.Fprintf(&icfg, "packagefile %s=%s\n", p1.ImportPath, a1.built)
 	}
 
-	if p.Internal.BuildInfo != "" && cfg.ModulesEnabled {
+	if p.Internal.BuildInfo != "" && cfg.ModulesEnabled { // TODO(computermouth)
 		if err := b.writeFile(objdir+"_gomod_.go", load.ModInfoProg(p.Internal.BuildInfo, cfg.BuildToolchainName == "gccgo")); err != nil {
 			return err
 		}
@@ -682,7 +700,7 @@ func (b *Builder) build(a *Action) (err error) {
 	}
 
 	// Compile Go.
-	objpkg := objdir + "_pkg_.a"
+	objpkg := objdir + "_pkg_.a" // TODO(computermouth)
 	ofile, out, err := BuildToolchain.gc(b, a, objpkg, icfg.Bytes(), symabis, len(sfiles) > 0, gofiles)
 	if len(out) > 0 {
 		output := b.processOutput(out)
@@ -751,7 +769,7 @@ func (b *Builder) build(a *Action) (err error) {
 	// For gccgo on ELF systems, we write the build ID as an assembler file.
 	// This lets us set the SHF_EXCLUDE flag.
 	// This is read by readGccgoArchive in cmd/internal/buildid/buildid.go.
-	if a.buildID != "" && cfg.BuildToolchainName == "gccgo" {
+	if a.buildID != "" && cfg.BuildToolchainName == "gccgo" { // TODO(computermouth)
 		switch cfg.Goos {
 		case "aix", "android", "dragonfly", "freebsd", "illumos", "linux", "netbsd", "openbsd", "solaris":
 			asmfile, err := b.gccgoBuildIDFile(a)
@@ -1085,6 +1103,9 @@ func (b *Builder) vet(a *Action) error {
 	if cfg.BuildToolchainName == "gccgo" {
 		env = append(env, "GCCGO="+BuildToolchain.compiler())
 	}
+	if cfg.BuildToolchainName == "cc" {
+		env = append(env, "CC="+BuildToolchain.compiler())
+	}
 
 	p := a.Package
 	tool := VetTool
@@ -1173,6 +1194,14 @@ func (b *Builder) printLinkerConfig(h io.Writer, p *load.Package) {
 
 	case "gccgo":
 		id, err := b.gccgoToolID(BuildToolchain.linker(), "go")
+		if err != nil {
+			base.Fatalf("%v", err)
+		}
+		fmt.Fprintf(h, "link %s %s\n", id, ldBuildmode)
+		// TODO(iant): Should probably include cgo flags here.
+
+	case "cc": // TODO(computermouth)
+		id, err := b.ccToolID(BuildToolchain.linker(), "ld")
 		if err != nil {
 			base.Fatalf("%v", err)
 		}
@@ -2626,6 +2655,12 @@ func (b *Builder) cgo(a *Action, cgoExe, objdir string, pcCFLAGS, pcLDFLAGS, cgo
 		}
 	}
 
+	if cfg.BuildToolchainName == "cc" {
+		if b.gccSupportsFlag([]string{BuildToolchain.compiler()}, "-fsplit-stack") {
+			cgoCFLAGS = append(cgoCFLAGS, "-fsplit-stack")
+		}
+	}
+
 	switch cfg.BuildBuildmode {
 	case "c-archive", "c-shared":
 		// Tell cgo that if there are any exported functions
@@ -2704,6 +2739,14 @@ func (b *Builder) cgo(a *Action, cgoExe, objdir string, pcCFLAGS, pcLDFLAGS, cgo
 		outGo = append(outGo, importGo)
 
 	case "gccgo":
+		defunC := objdir + "_cgo_defun.c"
+		defunObj := objdir + "_cgo_defun.o"
+		if err := BuildToolchain.cc(b, a, defunObj, defunC); err != nil {
+			return nil, nil, err
+		}
+		outObj = append(outObj, defunObj)
+
+	case "cc": // TODO(computermouth)
 		defunC := objdir + "_cgo_defun.c"
 		defunObj := objdir + "_cgo_defun.o"
 		if err := BuildToolchain.cc(b, a, defunObj, defunC); err != nil {
@@ -3005,7 +3048,7 @@ func (b *Builder) swigOne(a *Action, p *load.Package, file, objdir string, pcCFL
 		gccExt = "cxx"
 	}
 
-	gccgo := cfg.BuildToolchainName == "gccgo"
+	gccgo := cfg.BuildToolchainName == "gccgo" // TODO(computermouth)
 
 	// swig
 	args := []string{

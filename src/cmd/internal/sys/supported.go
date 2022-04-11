@@ -52,6 +52,9 @@ func BuildModeSupported(compiler, buildmode, goos, goarch string) bool {
 	if compiler == "gccgo" {
 		return true
 	}
+	if compiler == "cc" { // TODO(computermouth)
+		return true
+	}
 
 	platform := goos + "/" + goarch
 

@@ -125,7 +125,7 @@ func listTools() {
 		}
 		// The tool directory used by gccgo will have other binaries
 		// in addition to go tools. Only display go tools here.
-		if cfg.BuildToolchainName == "gccgo" && !isGccgoTool(name) {
+		if cfg.BuildToolchainName == "gccgo" && !isGccgoTool(name) { // TODO(computermouth)
 			continue
 		}
 		fmt.Println(name)

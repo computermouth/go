@@ -188,6 +188,8 @@ func SizesFor(compiler, arch string) Sizes {
 		m = gcArchSizes
 	case "gccgo":
 		m = gccgoArchSizes
+	case "cc":
+		m = gccgoArchSizes // TODO(computermouth)
 	default:
 		return nil
 	}
